@@ -11,12 +11,15 @@
 .
 ├── frontend/                 Vue 3 + Vite + TypeScript 前端
 │   ├── src/views/WorkbenchView.vue|tsx  全部模块共享工作台
+│   ├── src/views/SubscriptionUsageView.vue  订阅账期用量明细（换订阅追溯）
 │   ├── src/data/modules.ts              18个业务模块配置
 │   ├── src/api/              统一请求封装
 │   └── vite.config.ts        dev server 配置（open: false）
 ├── backend/                  FastAPI（Python） 后端
 │   ├── app/routers/resource.py  通用查询/导出/登记/动作接口
+│   ├── app/routers/subscription_usage.py  换订阅追溯只读接口
 │   ├── app/services/<key>.py    每个模块独立领域逻辑
+│   ├── app/services/subscription_usage.py  订阅账期用量明细追溯
 │   ├── app/services/base.py     共享服务骨架
 │   └── app/store.py          内存数据仓库与示例数据
 ├── .gitignore
@@ -68,6 +71,41 @@ npm run dev
 | 版本兼容 | `version_compat` | 版本映射 | 映射编号、关联API、旧版本 |
 | 批量查询 | `batch_query` | 批量任务 | 任务编号、关联API、查询清单 |
 | SDK配置 | `sdk_config` | SDK配置 | 配置编号、关联API、SDK语言 |
+
+## 订阅账期用量明细（换订阅追溯）
+
+已出账用量过去只能按账期翻账，遇到同一账期内同一 API 先后生效两份订阅时，
+月底账单会按调用方合并成一行，财务看不出换订阅影响了哪些用量。新增只读追溯页
+（前端 `/subscription-usage`）解决这条链路：
+
+1. 按账期列出已出账原账单，保留原账单金额、调用次数和账单状态；
+2. 结合订阅生效区间与订阅变化记录，还原账期内先后生效的订阅段；
+3. 用原始用量明细切出每段订阅的命中区间、命中调用量，并按原始调用量
+   分摊原账单金额（分摊合计恒等于原账单金额）；
+4. 按订阅单价重算后给出差额和调整方向，用原用量记录判断能否发起更正；
+5. 更正只登记申请单，不改写原账单，也不生成第二笔收费。
+
+接口（只读）：
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /api/subscription-usage/bills?billing_cycle=2026-10` | 按账期/调用方/API 列出账单，`changed_only` 只看换订阅 |
+| `GET /api/subscription-usage/trace?billing_cycle=2026-10&caller=陈嘉禾` | 按账期追溯换订阅明细 |
+| `GET /api/subscription-usage/trace?bill_id=4` | 打开原账单后按账单编号回查，仍为只读 |
+| `GET /api/subscription-usage/details?application_no=SUBS-0012` | 原始用量明细，按订阅申请定位 |
+| `GET /api/subscription-usage/changes?billing_cycle=2026-10` | 订阅变化记录 |
+| `GET/POST /api/subscription-usage/corrections` | 差额更正申请查询/登记 |
+
+示例场景（种子数据，账期 `2026-10`，`订单明细查询API`）：
+
+- 陈嘉禾：10-01~10-15 基础套餐 1800 次 × 0.20 元，10-16~10-31 增强套餐
+  1200 次 × 0.25 元；月底合并出账 600.00 元，按订阅单价重算 660.00 元，
+  差额 -60.00 元（少收），命中区间 `2026-10-16~2026-10-31`，可发起差额补收更正。
+- 林墨：整月单段订阅 1200 次，原账单 240.00 元与重算一致，不判为换订阅、
+  不能发起更正。
+
+追溯全程只读：不新增账单、不复制用量、不改原金额；每次查询记录一条
+`charge_delta = 0` 的追溯日志，证明检索拆分没有构成二次收费。
 
 ## 约定
 

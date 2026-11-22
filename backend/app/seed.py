@@ -653,3 +653,10 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
   '序列化格式': 'SDK配置样例3',
   '配置版本': 'SDK配置样例3'}]
 }
+
+
+# 换订阅追溯场景：同一 API 两位调用方，其中一位在账期内先后生效两段订阅。
+from app.scenario_subscription_usage import SCENARIO_ROWS
+
+for _module, _rows in SCENARIO_ROWS.items():
+    SEED_ROWS.setdefault(_module, []).extend(_rows)
